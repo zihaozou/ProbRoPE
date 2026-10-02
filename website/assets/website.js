@@ -21,6 +21,19 @@
   if (!window.gsap || !window.ScrollToPlugin) return;
   gsap.registerPlugin(ScrollToPlugin);
   const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+  const touchViewport=matchMedia('(hover:none) and (pointer:coarse)');
+  function lockTouchViewport(){
+    if(!touchViewport.matches)return;
+    const root=document.documentElement;
+    root.style.removeProperty('--page-height');
+    root.style.removeProperty('--browser-inset');
+    const measured=document.querySelector('.paper-page').clientHeight;
+    const height=window.innerWidth<=760?Math.max(measured,window.screen.height):measured;
+    root.style.setProperty('--content-height',`${window.innerHeight}px`);
+    root.style.setProperty('--page-height',`${height}px`);
+    root.style.setProperty('--browser-inset',`${Math.max(0,height-window.innerHeight)}px`);
+  }
+  lockTouchViewport();
   let stops = [0];
   let current = 0;
   let tween;
@@ -247,13 +260,30 @@
   const overviewContent=document.createElement('div'); overviewContent.className='paper-content';
   while(overview.firstChild) overviewContent.append(overview.firstChild);
   overviewFit.append(overviewContent); overview.append(overviewFit);
+  let overviewFitKey='';
   function fitOverview() {
     const css=getComputedStyle(overview);
     const available=Math.max(1,overview.clientHeight-parseFloat(css.paddingTop)-parseFloat(css.paddingBottom));
-    const natural=overviewContent.offsetHeight;
-    const scale=Math.min(1,available/Math.max(1,natural));
+    const compact=matchMedia('(max-width:760px), (max-width:900px) and (orientation:portrait)').matches;
+    const key=()=>[overview.clientWidth,available,overviewContent.offsetHeight,compact,document.fonts.status].join(':');
+    if(key()===overviewFitKey)return;
+    overviewContent.style.transformOrigin=compact?'top left':'top center';
+    overviewContent.style.width='100%';
+    let scale=Math.min(1,available/Math.max(1,overviewContent.offsetHeight));
+    if(compact && scale<1){
+      let low=scale,high=1;
+      for(let i=0;i<10;i++){
+        const candidate=(low+high)/2;
+        overviewContent.style.width=`${100/candidate}%`;
+        if(overviewContent.offsetHeight*candidate<=available)low=candidate;
+        else high=candidate;
+      }
+      scale=low;
+      overviewContent.style.width=`${100/scale}%`;
+    }
     overviewContent.style.transform=`scale(${scale})`;
-    overviewFit.style.height=`${natural*scale}px`;
+    overviewFit.style.height=`${overviewContent.offsetHeight*scale}px`;
+    overviewFitKey=key();
     measureStops();
   }
   const overviewObserver=new ResizeObserver(fitOverview);
@@ -275,10 +305,10 @@
     if(!region) return false;
     return direction<0 ? region.scrollTop>1 : region.scrollTop+region.clientHeight<region.scrollHeight-1;
   }
-  function stepPage(direction) {
+  function stepPage(direction,useChapters=true) {
     const index=scripted?current:nearestStop();
     const page=document.querySelectorAll('[data-page]')[index];
-    if(page?.id==='probrope-formulations'&&window.formulationNavigation?.step(direction))return 'chapters';
+    if(useChapters&&page?.id==='probrope-formulations'&&window.formulationNavigation?.step(direction))return 'chapters';
     goTo(index+direction);return 'page';
   }
   function activeScrollRegion(){return document.querySelectorAll('[data-page]')[scripted?current:nearestStop()]?.querySelector?.('[data-native-scroll]');}
@@ -345,9 +375,11 @@
   window.addEventListener('touchstart',event=>{
     const nativeRegion=event.target.closest?.('[data-native-scroll]');
     const region=activeScrollRegion() || nativeRegion;
+    const isFormulation=document.querySelectorAll('[data-page]')[scripted?current:nearestStop()]?.id==='probrope-formulations';
+    if(isFormulation)window.formulationNavigation?.pause();
     touchGesture=event.touches.length===1 ? {
       x:event.touches[0].clientX,y:event.touches[0].clientY,
-      lastY:event.touches[0].clientY,reverseDistance:0,direction:0,owner:null,region,native:region===nativeRegion,
+      lastX:event.touches[0].clientX,lastY:event.touches[0].clientY,axis:null,isFormulation,reverseDistance:0,direction:0,owner:null,region,native:region===nativeRegion,
       canUp:!!region && region.scrollTop>1,
       canDown:!!region && region.scrollTop+region.clientHeight<region.scrollHeight-1
     } : null;
@@ -356,14 +388,38 @@
     if(!touchGesture || event.touches.length!==1 || dialog.open) return;
     const t=event.touches[0], gesture=touchGesture;
     const dx=gesture.x-t.clientX,dy=gesture.y-t.clientY;
-    if(!gesture.owner && (Math.abs(dy)<8 || Math.abs(dx)>Math.abs(dy))) return;
+    if(!gesture.axis){
+      if(Math.max(Math.abs(dx),Math.abs(dy))<8){
+        if((gesture.isFormulation || !gesture.native) && event.cancelable)event.preventDefault();
+        return;
+      }
+      gesture.axis=Math.abs(dx)>Math.abs(dy)?'x':'y';
+    }
+    if(gesture.axis==='x'){
+      if(!gesture.isFormulation)return;
+      if(event.cancelable)event.preventDefault();
+      const movement=gesture.lastX-t.clientX;
+      gesture.lastX=t.clientX;
+      const direction=Math.sign(movement)||gesture.direction;
+      if(!gesture.owner){
+        gesture.owner='chapters';gesture.direction=direction;
+        window.formulationNavigation?.step(direction);
+      }else{
+        gesture.reverseDistance=direction!==gesture.direction?gesture.reverseDistance+Math.abs(movement):0;
+        if(gesture.reverseDistance>=8){
+          gesture.direction=direction;gesture.reverseDistance=0;
+          window.formulationNavigation?.step(direction);
+        }
+      }
+      return;
+    }
     const movement=gesture.lastY-t.clientY;
     gesture.lastY=t.clientY;
     const direction=Math.sign(movement)||gesture.direction;
     if(!gesture.owner) {
       gesture.owner=(direction<0?gesture.canUp:gesture.canDown)?'gallery':'page';
       gesture.direction=direction;
-      if(gesture.owner==='page') gesture.owner=stepPage(direction);
+      if(gesture.owner==='page') gesture.owner=stepPage(direction,false);
     } else if(gesture.owner!=='gallery') {
       // Measure from the turning point, not the initial touch position. Slow
       // reversals count too, and crossing the initial point cannot stall input.
@@ -373,7 +429,7 @@
         const region=activeScrollRegion();
         const internal=region && (direction<0?region.scrollTop>1:region.scrollTop+region.clientHeight<region.scrollHeight-1);
         if(internal){gesture.owner='gallery';gesture.region=region;gesture.native=event.target.closest?.('[data-native-scroll]')===region;}
-        else gesture.owner=stepPage(direction);
+        else gesture.owner=stepPage(direction,false);
       }
     }
     if(gesture.owner==='gallery') {
@@ -383,9 +439,15 @@
     }
     if(event.cancelable) event.preventDefault();
   },{passive:false});
-  for(const type of ['touchend','touchcancel']) window.addEventListener(type,()=>{touchGesture=null;},{passive:true});
+  for(const type of ['touchend','touchcancel']) window.addEventListener(type,()=>{touchGesture=null;if(!scripted)settled();},{passive:true});
   function settled() {
-    if (!scripted) current=nearestStop();
+    if(touchGesture)return;
+    if(!scripted){
+      if(touchViewport.matches){
+        const y=stops[current];
+        if(Number.isFinite(y) && Math.abs(window.scrollY-y)>1)window.scrollTo(0,y);
+      }else current=nearestStop();
+    }
     activatePage();
   }
   window.addEventListener('scroll', () => {
@@ -411,15 +473,26 @@
     else if (event.key === 'End') goTo(stops.length - 1);
     else stepPage(up || (event.key === ' ' && event.shiftKey) ? -1 : 1);
   });
-  document.addEventListener('paper-layout', () => { measureStops(); if(!scripted){window.scrollTo(0,stops[current]);activatePage();} });
+  document.addEventListener('paper-layout', () => {
+    const destination=current;
+    measureStops();
+    current=destination;
+    if(!scripted && !touchGesture){window.scrollTo(0,stops[current]);activatePage();}
+  });
   let resizeTimer;
+  let layoutWidth=window.innerWidth,layoutHeight=window.innerHeight;
   window.addEventListener('resize', () => {
+    if(window.innerWidth===layoutWidth && (touchViewport.matches || window.innerHeight===layoutHeight))return;
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
       const destination=current;
+      layoutWidth=window.innerWidth;layoutHeight=window.innerHeight;
       cancelJump();
+      lockTouchViewport();
       measureStops();
-      goTo(destination);
+      current=destination;
+      window.scrollTo(0,stops[current]);
+      activatePage();
     }, 150);
   });
   document.fonts.ready.then(() => {

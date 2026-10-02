@@ -31,6 +31,13 @@
     };
     const slide=Number(stage.closest('[data-slide]').dataset.slide);
     const diagram=makeSVG(slide===1?'25 150 590 520':slide===2?'20 150 390 550':'20 245 390 310','Temporal encoding diagram');
+    let secondDiagram=null;
+    if(slide===2){
+      diagram.setAttribute('viewBox','20 157 390 250');
+      secondDiagram=makeSVG('20 410 390 280','Physical timestamp encoding');
+      const pair=document.createElement('div');pair.className='mobile-diagram-pair';
+      mobile.prepend(pair);pair.append(diagram,secondDiagram);
+    }
     let output;
     if(slide===1) output=makeSVG('580 155 715 465','Patchifier and token sequences');
     else {
@@ -59,7 +66,7 @@
     }
     stage.append(mobile);
     const outputIds=new Set([145,80,146,151,156,161,166,171,95,96,600]);
-    return {stage,source,groups,title,mobile,diagram,output,slide,outputIds,media};
+    return {stage,source,groups,title,mobile,diagram,secondDiagram,output,slide,outputIds,media};
   });
   function layoutSlides() {
     for(const l of layouts) {
@@ -67,7 +74,9 @@
         for(const group of l.groups) {
           if(group===l.title) continue;
           const isOutput=l.slide===1?l.outputIds.has(Number(group.dataset.shape)):group.dataset.shape==='700';
-          (isOutput?l.output:l.diagram).append(group);
+          const shape=Number(group.dataset.shape);
+          const second=l.slide===2 && ([601,621,631].includes(shape)||shape>=2072);
+          (isOutput?l.output:second?l.secondDiagram:l.diagram).append(group);
         }
         if(l.media){l.output.style.display='none';l.output.parentElement.append(l.media);}
       } else {
@@ -87,7 +96,13 @@
       const page=l.stage.closest('[data-page]');
       const css=getComputedStyle(page);
       const controls=page.querySelector('.slide-controls');
-      const available=Math.max(1,page.clientHeight-parseFloat(css.paddingTop)-parseFloat(css.paddingBottom)-controls.offsetHeight-parseFloat(css.rowGap));
+      const available=Math.max(1,page.clientHeight-parseFloat(css.paddingTop)-parseFloat(css.paddingBottom));
+      if(l.media){
+        const diagramSpace=Math.max(1,available-l.media.offsetHeight-18);
+        if(l.secondDiagram){
+          for(const diagram of [l.diagram,l.secondDiagram])diagram.style.maxHeight=`${diagramSpace}px`;
+        }else l.diagram.style.maxHeight=`${diagramSpace}px`;
+      }
       const natural=l.mobile.offsetHeight;
       const scale=Math.min(1,available/Math.max(1,natural));
       l.mobile.style.transform=`scale(${scale})`;

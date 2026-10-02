@@ -1,10 +1,13 @@
-/* Four horizontally sliding derivation chapters with a persistent timeline. */
+/* Horizontally sliding derivation chapters with a persistent timeline. */
 (()=>{
   const page=document.querySelector('#probrope-formulations');if(!page)return;
   const reduced=matchMedia('(prefers-reduced-motion: reduce)'),content=page.querySelector('.formulation-content'),viewport=page.querySelector('.formulation-viewport');
   const title=page.querySelector('h2'),heading=page.querySelector('.formulation-heading'),cardsElement=page.querySelector('.formulation-cards');
   const storyTemplates=[...page.querySelectorAll('[data-story-equation]')];
-  const formsChapter=storyTemplates.length-1,chapterTimes=[0,4,13,18];
+  const formsChapter=storyTemplates.length-1;
+  const mobileForms=matchMedia('(max-width:760px)');
+  const chapterCount=()=>storyTemplates.length+(mobileForms.matches?2:0);
+  const chapterTimes=()=>mobileForms.matches?[0,4,13,18,24,30]:[0,4,13,18];
   const pauseButton=page.querySelector('[data-formula-pause]');
   let master=null,chapter=0,entryChapter=0,manualEntry=false,active=false,paused=false,resizeTimer;
   const effects=new Map();
@@ -55,7 +58,7 @@
   });
   let temporalMode=null;
   function updateTemporal(index,animate){
-    const mode=index===0?'timestamp':index===formsChapter?'forms':'distribution';
+    const mode=index===0?'timestamp':index>=formsChapter?'forms':'distribution';
     temporal.hidden=mode==='forms';
     if(mode===temporalMode)return; // Keep the same distribution through substitution and factorization.
     temporalMode=mode;
@@ -98,7 +101,7 @@
       });
     }
     fitDerivations();
-    if(chapter===formsChapter){
+    if(chapter>=formsChapter){
       let unit=1;
       for(let i=0;i<3&&content.offsetHeight>available;i++){
         unit*=available/content.offsetHeight;
@@ -141,9 +144,11 @@
     finishChapterTransition();
     const slide=animate&&!reduced.matches&&index!==previous;
     if(slide)outgoing=snapshotChapter();
-    chapter=index;const template=storyTemplates[index];
+    chapter=Math.max(0,Math.min(index,chapterCount()-1));index=chapter;const template=storyTemplates[Math.min(index,formsChapter)];
     cancelEffect(heading);title.textContent=template.dataset.title;
-    cardsElement.hidden=index!==formsChapter;page.classList.toggle('show-formulations',index===formsChapter);page.classList.toggle('show-expectation',index===1);
+    cardsElement.hidden=index<formsChapter;page.classList.toggle('show-formulations',index>=formsChapter);
+    page.classList.toggle('single-form',mobileForms.matches&&index>=formsChapter);
+    cards.forEach((card,i)=>{card.el.hidden=mobileForms.matches&&index>=formsChapter&&i!==index-formsChapter;});page.classList.toggle('show-expectation',index===1);
     updateTemporal(index,false);
     window.alignPaperHeadings?.();equation(story,template,false);fit();
     page.querySelectorAll('[data-formula-chapter]').forEach(b=>b.setAttribute('aria-current',Number(b.dataset.formulaChapter)===index?'step':'false'));
@@ -159,17 +164,30 @@
     finishChapterTransition();master?.kill();[...effects.keys()].forEach(cancelEffect);paused=false;pauseButton.textContent='Pause';setChapter(reduced.matches?formsChapter:from,!reduced.matches);
     if(reduced.matches||!window.gsap){pauseButton.textContent='Pause';return;}
     master=gsap.timeline({onComplete:()=>{pauseButton.textContent='Pause';}});
-    chapterTimes.forEach((time,i)=>{if(i>from)master.call(()=>setChapter(i),[],time-chapterTimes[from]);});
+    const times=chapterTimes();
+    times.forEach((time,i)=>{if(i>from)master.call(()=>setChapter(i),[],time-times[from]);});
     master.to({}, {duration:2},'>');
   }
 
-  page.querySelectorAll('[data-formula-chapter]').forEach(b=>b.onclick=()=>{pause();setChapter(Number(b.dataset.formulaChapter));});
+  function renderChapterButtons(){
+    const nav=page.querySelector('.formula-chapters');
+    const names=['RoPE','Expectation and substitution','General form',...(mobileForms.matches?['Uniform','Gaussian','Learned']:['Three forms'])];
+    nav.replaceChildren(...names.map((name,i)=>{
+      const button=document.createElement('button');button.type='button';button.dataset.formulaChapter=String(i);
+      button.setAttribute('aria-label',`Derivation step ${i+1}: ${name}`);
+      const number=document.createElement('span');number.textContent=String(i+1).padStart(2,'0');button.append(number);
+      button.onclick=()=>{pause();setChapter(i);};return button;
+    }));
+  }
+  renderChapterButtons();
+  mobileForms.addEventListener('change',()=>{pause();renderChapterButtons();chapter=Math.min(chapter,chapterCount()-1);entryChapter=Math.min(entryChapter,chapterCount()-1);setChapter(chapter,false);});
   page.querySelector('[data-formula-replay]').onclick=()=>start(0);
   pauseButton.onclick=()=>{if(!master||master.progress()===1){start();return;}if(paused){paused=false;master.play();effects.forEach(e=>e.play());pauseButton.textContent='Pause';}else pause();};
   window.formulationNavigation={
-    canStep:direction=>chapter+direction>=0&&chapter+direction<storyTemplates.length,
+    pause,
+    canStep:direction=>chapter+direction>=0&&chapter+direction<chapterCount(),
     step(direction){if(!this.canStep(direction))return false;pause();setChapter(chapter+direction);entryChapter=chapter;if(!active)manualEntry=true;return true;},
-    prepare:direction=>{if(!active){entryChapter=direction<0?formsChapter:0;manualEntry=false;setChapter(entryChapter,false);}}
+    prepare:direction=>{if(!active){entryChapter=direction<0?chapterCount()-1:0;manualEntry=false;setChapter(entryChapter,false);}}
   };
   setChapter(0,false);
   new IntersectionObserver(entries=>{const visible=entries[0].isIntersecting;if(visible&&!active){active=true;if(!manualEntry)start(entryChapter);manualEntry=false;}else if(!visible&&active){active=false;pause();}},{threshold:.5}).observe(page);

@@ -97,7 +97,20 @@ function initializeResultGallery(page,dataset,prefix) {
     // One predecoded row on approach; all other media are already prefetched.
     return new Set(pageNear?rows.slice(0,1):[]);
   }
+  function refreshVisibleRows(){
+    const bounds=gallery.getBoundingClientRect();
+    const viewportHeight=window.visualViewport?.height || window.innerHeight;
+    const top=Math.max(0,bounds.top),bottom=Math.min(viewportHeight,bounds.bottom);
+    pageVisible=bottom>top && bounds.right>0 && bounds.left<window.innerWidth;
+    visibleRows.clear();
+    if(!pageVisible)return;
+    rows.forEach(row=>{
+      const rect=row.getBoundingClientRect();
+      if(Math.min(rect.bottom,bottom)-Math.max(rect.top,top)>1)visibleRows.add(row);
+    });
+  }
   function updatePlayback() {
+    refreshVisibleRows();
     playButton.textContent=playing?'Pause videos':'Play videos';
     const resident=residentRows();
     rows.forEach(row=>{if(resident.has(row)){hydrateRow(row);syncPlayback(row);}else releaseRow(row);});
@@ -135,12 +148,12 @@ function initializeResultGallery(page,dataset,prefix) {
     }
     let video=state.videos.get(src);
     if(video){video.onseeked=()=>present(video);prepare(video);return;}
-    video=document.createElement('video');video.hidden=true;
+    video=document.createElement('video');video.hidden=Boolean(state.shown);
     video.muted=true;video.loop=true;video.playsInline=true;video.preload='auto';
     video.defaultPlaybackRate=dataset.playbackRate || 1;video.playbackRate=dataset.playbackRate || 1;
     video.dataset.src=src;video.setAttribute('aria-label',label);
     state.videos.set(src,video);cell.append(video);
-    video.addEventListener('loadedmetadata',()=>{video.playbackRate=dataset.playbackRate || 1;});
+    video.addEventListener('loadedmetadata',()=>{video.playbackRate=dataset.playbackRate || 1;syncPlayback(row);});
     video.addEventListener('loadeddata',()=>prepare(video));
     video.onseeked=()=>present(video);
     video.addEventListener('error',()=>{
@@ -149,7 +162,7 @@ function initializeResultGallery(page,dataset,prefix) {
       cell.querySelector('.result-missing')?.remove();
       const message=document.createElement('span');message.className='result-missing';message.textContent='Video unavailable';cell.append(message);
     });
-    const attach=source=>queueResultDecoder(()=>{if(video.isConnected && state.requested===src){video.src=source;video.load();}});
+    const attach=source=>queueResultDecoder(()=>{if(video.isConnected && state.requested===src){video.src=source;video.load();syncPlayback(row);}});
     resultMediaCache.request(src,pageVisible&&visibleRows.has(row)?3:1).then(attach).catch(()=>attach(src));
   }
   function hydrateRow(row){
@@ -223,6 +236,10 @@ function initializeResultGallery(page,dataset,prefix) {
     schedulePlayback();
   },{root:gallery,threshold:0.05});
   rows.forEach(row=>rowObserver.observe(row));
+  gallery.addEventListener('scroll',schedulePlayback,{passive:true});
+  window.addEventListener('scroll',schedulePlayback,{passive:true});
+  window.addEventListener('resize',schedulePlayback,{passive:true});
+  window.visualViewport?.addEventListener('resize',schedulePlayback,{passive:true});
   new IntersectionObserver(entries=>{
     pageVisible=entries[0].intersectionRatio>=0.5;schedulePlayback();
   },{threshold:0.5}).observe(page);
@@ -234,7 +251,7 @@ function initializeResultGallery(page,dataset,prefix) {
   playButton.addEventListener('click',()=>{playing=!playing;updatePlayback();});
   document.addEventListener('visibilitychange',updatePlayback);
   reduced.addEventListener('change',()=>{playing=!reduced.matches;updatePlayback();});
-  // Show at most three rows; short screens use fewer rows, never thin strips.
+  // Fit complete rows to the available gallery area.
   function fitGallery() {
     const header=panel.querySelector('.result-columns');
     const available=Math.max(1,panel.clientHeight-header.offsetHeight-10);
@@ -242,7 +259,8 @@ function initializeResultGallery(page,dataset,prefix) {
     const measuredWidth=dataset.videoAspectRatio ? panel.clientWidth-16 : gallery.clientWidth;
     const natural=(measuredWidth-40)/5/(dataset.videoAspectRatio || 1.5);
     const minimumRowHeight=Math.min(natural,120);
-    const count=Math.min(rows.length,3,Math.max(1,Math.floor((available+gap)/(minimumRowHeight+gap))));
+    const maxRows=matchMedia('(max-width:760px) and (orientation:portrait)').matches?6:3;
+    const count=Math.min(rows.length,maxRows,Math.max(1,Math.floor((available+gap)/(minimumRowHeight+gap))));
     const rowHeight=Math.max(1,Math.min(natural,(available-gap*(count-1))/count));
     if(dataset.videoAspectRatio) {
       const videoSize=Math.max(1,Math.min(rowHeight,(panel.clientWidth-48)/5));
@@ -251,6 +269,7 @@ function initializeResultGallery(page,dataset,prefix) {
     }
     gallery.style.setProperty('--result-row-height',`${rowHeight}px`);
     gallery.style.height=`${rowHeight*count+gap*Math.max(0,count-1)}px`;
+    schedulePlayback();
   }
   new ResizeObserver(fitGallery).observe(panel);
   document.fonts.ready.then(fitGallery);

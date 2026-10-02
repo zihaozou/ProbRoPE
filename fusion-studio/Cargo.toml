@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.dependencies]
+anyhow = "1"
+crossbeam-channel = "0.5"
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }

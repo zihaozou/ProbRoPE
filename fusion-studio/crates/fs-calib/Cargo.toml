@@ -1,0 +1,9 @@
+[package]
+name = "fs-calib"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+serde = { workspace = true }
+serde_json = { workspace = true }
+opencv = { version = "0.100.1", default-features = false, features = ["calib3d", "objdetect", "imgproc", "videoio", "imgcodecs", "clang-runtime"] }

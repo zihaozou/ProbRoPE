@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+*.log
+*.safetensors
+generated.mp4
+.venv/
+.env
+/outputs/
+/models/
+*.egg-info/
+/build/
+/dist/
+/.worktree/

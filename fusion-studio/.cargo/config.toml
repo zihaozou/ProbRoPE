@@ -1,0 +1,5 @@
+[env]
+LIBCLANG_PATH = "C:\\tools\\llvm\\bin"
+OPENCV_LINK_LIBS = "opencv_world4120"
+OPENCV_LINK_PATHS = "C:\\tools\\opencv\\opencv\\build\\x64\\vc16\\lib"
+OPENCV_INCLUDE_PATHS = "C:\\tools\\opencv\\opencv\\build\\include"

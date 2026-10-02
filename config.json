@@ -1,0 +1,42 @@
+{
+  "model_type": "dfuse",
+  "architectures": [
+    "DFuse"
+  ],
+  "model_config": {
+    "patch_size": [
+      1,
+      2,
+      2
+    ],
+    "in_dim": 16,
+    "dim": 1536,
+    "ffn_dim": 8960,
+    "freq_dim": 256,
+    "text_dim": 4096,
+    "out_dim": 16,
+    "num_heads": 12,
+    "num_layers": 30,
+    "eps": 1e-06,
+    "num_modalities": 2,
+    "modulation_type": "learned",
+    "enable_position_phase": false
+  },
+  "components": {
+    "vae": {
+      "repo_id": "Wan-AI/Wan2.1-T2V-1.3B",
+      "filename": "Wan2.1_VAE.pth",
+      "revision": "37ec512624d61f7aa208f7ea8140a131f93afc9a"
+    },
+    "text_encoder": {
+      "repo_id": "Wan-AI/Wan2.1-T2V-1.3B",
+      "filename": "models_t5_umt5-xxl-enc-bf16.pth",
+      "revision": "37ec512624d61f7aa208f7ea8140a131f93afc9a"
+    },
+    "tokenizer": {
+      "repo_id": "Wan-AI/Wan2.1-T2V-1.3B",
+      "subfolder": "google/umt5-xxl",
+      "revision": "37ec512624d61f7aa208f7ea8140a131f93afc9a"
+    }
+  }
+}

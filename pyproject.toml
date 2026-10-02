@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "dfuse-probrope"
+version = "0.1.0"
+description = "D-FUSE training and sampling with probabilistic rotary position embeddings"
+requires-python = ">=3.10,<3.14"
+license = {file = "LICENSE"}
+dependencies = [
+  "huggingface-hub>=0.34,<1",
+  "torch==2.10.0", "torchvision==0.25.0", "torchcodec==0.10.0",
+  "transformers==4.57.6", "accelerate==1.12.0", "peft==0.18.1",
+  "einops>=0.8,<0.9", "safetensors>=0.5,<1", "numpy>=1.26,<3",
+  "Pillow>=10", "tqdm>=4.65", "ftfy>=6.1", "regex>=2024.0",
+  "h5py>=3.11", "imageio>=2.34", "imageio-ffmpeg>=0.5", "av>=14",
+  "scipy>=1.12", "psutil>=5.9", "more-itertools>=10", "pandas>=2",
+  "polars>=1.20", "pydantic>=2", "natsort>=8", "opencv-python-headless>=4.10",
+  "modelscope>=1.20", "sentencepiece>=0.2", "protobuf>=4",
+]
+
+[project.optional-dependencies]
+distributed = ["deepspeed>=0.16,<0.20"]
+logging = ["wandb>=0.19"]
+metrics = ["lpips>=0.1.4", "pytorch-msssim>=1.0"]
+
+[tool.setuptools.packages.find]
+include = ["dfuse*"]
+
+[tool.setuptools.package-data]
+"dfuse.metrics.clip_backbone" = ["*.gz"]

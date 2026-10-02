@@ -372,6 +372,11 @@
     event.preventDefault();
   },{passive:false,capture:true});
   let touchGesture;
+  const wechatTouch=/MicroMessenger/i.test(navigator.userAgent);
+  function stepTouchPage(direction){
+    if(wechatTouch){touchGesture.pageDirection=direction;return 'page';}
+    return stepPage(direction,false);
+  }
   window.addEventListener('touchstart',event=>{
     const nativeRegion=event.target.closest?.('[data-native-scroll]');
     const region=activeScrollRegion() || nativeRegion;
@@ -419,7 +424,7 @@
     if(!gesture.owner) {
       gesture.owner=(direction<0?gesture.canUp:gesture.canDown)?'gallery':'page';
       gesture.direction=direction;
-      if(gesture.owner==='page') gesture.owner=stepPage(direction,false);
+      if(gesture.owner==='page') gesture.owner=stepTouchPage(direction);
     } else if(gesture.owner!=='gallery') {
       // Measure from the turning point, not the initial touch position. Slow
       // reversals count too, and crossing the initial point cannot stall input.
@@ -429,7 +434,7 @@
         const region=activeScrollRegion();
         const internal=region && (direction<0?region.scrollTop>1:region.scrollTop+region.clientHeight<region.scrollHeight-1);
         if(internal){gesture.owner='gallery';gesture.region=region;gesture.native=event.target.closest?.('[data-native-scroll]')===region;}
-        else gesture.owner=stepPage(direction,false);
+        else gesture.owner=stepTouchPage(direction);
       }
     }
     if(gesture.owner==='gallery') {
@@ -439,7 +444,13 @@
     }
     if(event.cancelable) event.preventDefault();
   },{passive:false});
-  for(const type of ['touchend','touchcancel']) window.addEventListener(type,()=>{touchGesture=null;if(!scripted)settled();},{passive:true});
+  for(const type of ['touchend','touchcancel']) window.addEventListener(type,()=>{
+    const direction=type==='touchend'?touchGesture?.pageDirection:0;
+    touchGesture=null;
+    if(direction)stepPage(direction,false);
+    if(!scripted)settled();
+    document.dispatchEvent(new Event('paper-media-activation'));
+  },{passive:true});
   function settled() {
     if(touchGesture)return;
     if(!scripted){

@@ -37,6 +37,7 @@ const resultMediaCache=(()=>{
   }
   function request(src,priority=0){
     if(!src)return Promise.resolve(null);
+    if(/MicroMessenger/i.test(navigator.userAgent))return Promise.resolve(src);
     let job=entries.get(src);
     if(job){job.priority=Math.max(job.priority,priority);pump();return job.promise;}
     job={src,priority,started:false};
@@ -81,13 +82,7 @@ function initializeResultGallery(page,dataset,prefix) {
       if(pageVisible && visibleRows.has(row) && !video.hidden) resultMediaCache.prioritize(video.dataset.src);
       if(shouldPlay && !video.hidden && video.getAttribute('src')) {
         if(!video.paused)return;
-        video.play().catch(error=>{
-          // Replacing a method or leaving a row aborts pending play promises.
-          // Only an actual autoplay denial should turn the user's playback off.
-          if(error.name==='NotAllowedError' && video.isConnected && pageVisible && playing){
-            playing=false;updatePlayback();
-          }
-        });
+        window.paperMedia.play(video);
       } else if(!video.paused)video.pause();
     });
   }
@@ -111,7 +106,8 @@ function initializeResultGallery(page,dataset,prefix) {
   }
   function updatePlayback() {
     refreshVisibleRows();
-    playButton.textContent=playing?'Pause videos':'Play videos';
+    const blocked=rows.some(row=>visibleRows.has(row)&&row.querySelector('video[data-play-blocked]'));
+    playButton.textContent=playing&&!blocked?'Pause videos':'Play videos';
     const resident=residentRows();
     rows.forEach(row=>{if(resident.has(row)){hydrateRow(row);syncPlayback(row);}else releaseRow(row);});
   }
@@ -149,7 +145,7 @@ function initializeResultGallery(page,dataset,prefix) {
     let video=state.videos.get(src);
     if(video){video.onseeked=()=>present(video);prepare(video);return;}
     video=document.createElement('video');video.hidden=Boolean(state.shown);
-    video.muted=true;video.loop=true;video.playsInline=true;video.preload='auto';
+    window.paperMedia.configure(video);video.loop=true;video.preload='auto';
     video.defaultPlaybackRate=dataset.playbackRate || 1;video.playbackRate=dataset.playbackRate || 1;
     video.dataset.src=src;video.setAttribute('aria-label',label);
     state.videos.set(src,video);cell.append(video);
@@ -248,7 +244,11 @@ function initializeResultGallery(page,dataset,prefix) {
   new IntersectionObserver(entries=>{
     pageNear=entries[0].isIntersecting;schedulePlayback();
   },{rootMargin:'100% 0px',threshold:0}).observe(page);
-  playButton.addEventListener('click',()=>{playing=!playing;updatePlayback();});
+  playButton.addEventListener('click',()=>{
+    const blocked=rows.some(row=>visibleRows.has(row)&&row.querySelector('video[data-play-blocked]'));
+    playing=blocked?true:!playing;updatePlayback();
+  });
+  document.addEventListener('paper-media-activation',updatePlayback);
   document.addEventListener('visibilitychange',updatePlayback);
   reduced.addEventListener('change',()=>{playing=!reduced.matches;updatePlayback();});
   // Fit complete rows to the available gallery area.

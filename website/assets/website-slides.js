@@ -1,3 +1,29 @@
+// Retry media within the browser's user-activation event, without timers.
+window.paperMedia = (() => {
+  const pending = new WeakSet();
+  function configure(video) {
+    video.muted = true;
+    video.defaultMuted = true;
+    video.playsInline = true;
+    for (const name of ['muted', 'playsinline', 'webkit-playsinline', 'x5-playsinline']) video.setAttribute(name, '');
+  }
+  function play(video) {
+    configure(video);
+    if (!video.paused || pending.has(video)) return;
+    pending.add(video);
+    Promise.resolve(video.play()).then(() => {
+      delete video.dataset.playBlocked;
+    }).catch(error => {
+      if (error.name === 'NotAllowedError') video.dataset.playBlocked = 'true';
+    }).finally(() => pending.delete(video));
+  }
+  const retry = () => document.dispatchEvent(new Event('paper-media-activation'));
+  for (const name of ['touchend', 'click', 'keydown', 'WeixinJSBridgeReady']) document.addEventListener(name, retry);
+  window.addEventListener('pageshow', retry);
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) retry(); });
+  return {configure, play};
+})();
+
 /* Native PPT entrance effects rebuilt as per-element GSAP timelines. */
 (() => {
   if (!window.gsap) return;
@@ -166,7 +192,7 @@
     }
     // Each comparison retains the single synchronized video from the PPT.
     const videos = [...section.querySelectorAll('video')];
-    videos.forEach(video => { video.muted=true; video.preload='auto'; video.addEventListener('error',()=>{section.dataset.mediaError='true';}); });
+    videos.forEach(video => { window.paperMedia.configure(video); video.preload='auto'; video.addEventListener('error',()=>{section.dataset.mediaError='true';}); });
     const pauseButton = section.querySelector('[data-pause]');
     const entry = {section,timeline,videos,animated,playing:false};
     entries.set([...document.querySelectorAll('[data-page]')].indexOf(section),entry);
@@ -175,13 +201,13 @@
       pauseButton.textContent='Pause';
       if (reduced.matches) timeline.progress(1).pause();
       else timeline.restart();
-      if(restartMedia) videos.forEach(v=>{v.currentTime=0;if(!reduced.matches)v.play().catch(()=>{pauseButton.textContent='Play';entry.playing=false;});});
+      videos.forEach(v=>{if(restartMedia)v.currentTime=0;if(!reduced.matches)window.paperMedia.play(v);});
     };
     section.querySelector('[data-replay]').addEventListener('click',()=>start(true));
     pauseButton.addEventListener('click',()=>{
       entry.playing=!entry.playing;
       pauseButton.textContent=entry.playing?'Pause':'Play';
-      if(entry.playing){timeline.resume();videos.forEach(v=>v.play().catch(()=>{}));}
+      if(entry.playing){timeline.resume();videos.forEach(v=>window.paperMedia.play(v));}
       else{timeline.pause();videos.forEach(v=>v.pause());}
     });
     entry.start=start;
@@ -197,9 +223,7 @@
     if(!next) return;
     next.videos.forEach(video=>{
       video.currentTime=0;
-      if(!reduced.matches) video.play().catch(()=>{
-        next.section.querySelector('[data-pause]').textContent='Play';next.playing=false;
-      });
+      if(!reduced.matches) window.paperMedia.play(video);
     });
   };
   window.activatePaperSlide = index => {
@@ -212,8 +236,13 @@
   document.addEventListener('visibilitychange',()=>{
     if(document.hidden){
       mediaTarget?.videos.forEach(v=>v.pause());
-      if(active){active.timeline.pause();active.playing=false;active.section.querySelector('[data-pause]').textContent='Play';}
+      if(active)active.timeline.pause();
     }
+  });
+  document.addEventListener('paper-media-activation',()=>{
+    if(document.hidden || reduced.matches)return;
+    if(mediaTarget && (mediaTarget!==active || active.playing))mediaTarget.videos.forEach(v=>window.paperMedia.play(v));
+    if(active?.playing)active.timeline.resume();
   });
   reduced.addEventListener('change',()=>{if(reduced.matches)entries.forEach(e=>{e.timeline.progress(1).pause();e.videos.forEach(v=>v.pause());});});
 })();

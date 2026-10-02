@@ -484,3 +484,5 @@ html.paged .results-page>:not(.results-panel){touch-action:pinch-zoom}
  .mobile-diagram-pair>.mobile-art{width:100%;height:auto;min-width:0}
  .slide-media{width:100%}
 }
+
+html.paged video[data-play-blocked]{pointer-events:auto}

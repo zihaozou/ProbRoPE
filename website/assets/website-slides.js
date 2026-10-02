@@ -1,21 +1,50 @@
-// Retry media within the browser's user-activation event, without timers.
+// Keep playback intent separate from a browser's autoplay permission.
 window.paperMedia = (() => {
   const pending = new WeakSet();
+  const configured = new WeakSet();
   function configure(video) {
     video.muted = true;
     video.defaultMuted = true;
     video.playsInline = true;
     for (const name of ['muted', 'playsinline', 'webkit-playsinline', 'x5-playsinline']) video.setAttribute(name, '');
+    if (!configured.has(video)) {
+      configured.add(video);
+      video.addEventListener('playing', () => {
+        delete video.dataset.playBlocked;
+        video.controls = false;
+      });
+    }
   }
-  function play(video) {
+  function play(video, wanted = () => video.isConnected && !document.hidden) {
     configure(video);
-    if (!video.paused || pending.has(video)) return;
+    if (!wanted() || !video.paused || pending.has(video)) return;
     pending.add(video);
-    Promise.resolve(video.play()).then(() => {
-      delete video.dataset.playBlocked;
-    }).catch(error => {
-      if (error.name === 'NotAllowedError') video.dataset.playBlocked = 'true';
-    }).finally(() => pending.delete(video));
+    function attempt(bridgeAllowed) {
+      if (!wanted()) { pending.delete(video); return; }
+      let promise;
+      try { promise = video.play(); } catch (error) { failed(error, bridgeAllowed); return; }
+      Promise.resolve(promise).then(() => {
+        pending.delete(video);
+        if (!wanted()) video.pause();
+        else { delete video.dataset.playBlocked; video.controls = false; }
+      }).catch(error => failed(error, bridgeAllowed));
+    }
+    function failed(error, bridgeAllowed) {
+      pending.delete(video);
+      if (!wanted() || error.name !== 'NotAllowedError') return;
+      video.dataset.playBlocked = 'true';
+      video.controls = true;
+      if (bridgeAllowed && window.WeixinJSBridge?.invoke) {
+        try {
+          window.WeixinJSBridge.invoke('getNetworkType', {}, () => {
+            if (!wanted() || !video.paused || pending.has(video)) return;
+            pending.add(video);
+            attempt(false);
+          });
+        } catch (_) { /* Native controls remain available if the bridge rejects the call. */ }
+      }
+    }
+    attempt(true);
   }
   const retry = () => document.dispatchEvent(new Event('paper-media-activation'));
   for (const name of ['touchend', 'click', 'keydown', 'WeixinJSBridgeReady']) document.addEventListener(name, retry);
@@ -201,13 +230,13 @@ window.paperMedia = (() => {
       pauseButton.textContent='Pause';
       if (reduced.matches) timeline.progress(1).pause();
       else timeline.restart();
-      videos.forEach(v=>{if(restartMedia)v.currentTime=0;if(!reduced.matches)window.paperMedia.play(v);});
+      videos.forEach(v=>{if(restartMedia)v.currentTime=0;if(!reduced.matches)window.paperMedia.play(v,()=>v.isConnected&&!document.hidden&&mediaTarget?.videos.includes(v)&&mediaTarget.playing);});
     };
     section.querySelector('[data-replay]').addEventListener('click',()=>start(true));
     pauseButton.addEventListener('click',()=>{
       entry.playing=!entry.playing;
       pauseButton.textContent=entry.playing?'Pause':'Play';
-      if(entry.playing){timeline.resume();videos.forEach(v=>window.paperMedia.play(v));}
+      if(entry.playing){timeline.resume();videos.forEach(v=>window.paperMedia.play(v,()=>v.isConnected&&!document.hidden&&mediaTarget?.videos.includes(v)&&mediaTarget.playing));}
       else{timeline.pause();videos.forEach(v=>v.pause());}
     });
     entry.start=start;
@@ -221,9 +250,10 @@ window.paperMedia = (() => {
     mediaTarget?.videos.forEach(video=>video.pause());
     mediaTarget=next;
     if(!next) return;
+    next.playing=!reduced.matches;
     next.videos.forEach(video=>{
       video.currentTime=0;
-      if(!reduced.matches) window.paperMedia.play(video);
+      if(!reduced.matches) window.paperMedia.play(video,()=>video.isConnected&&!document.hidden&&mediaTarget===next&&next.playing);
     });
   };
   window.activatePaperSlide = index => {
@@ -241,7 +271,7 @@ window.paperMedia = (() => {
   });
   document.addEventListener('paper-media-activation',()=>{
     if(document.hidden || reduced.matches)return;
-    if(mediaTarget && (mediaTarget!==active || active.playing))mediaTarget.videos.forEach(v=>window.paperMedia.play(v));
+    if(mediaTarget && (mediaTarget!==active || active.playing))mediaTarget.videos.forEach(v=>window.paperMedia.play(v,()=>v.isConnected&&!document.hidden&&mediaTarget?.videos.includes(v)&&mediaTarget.playing));
     if(active?.playing)active.timeline.resume();
   });
   reduced.addEventListener('change',()=>{if(reduced.matches)entries.forEach(e=>{e.timeline.progress(1).pause();e.videos.forEach(v=>v.pause());});});

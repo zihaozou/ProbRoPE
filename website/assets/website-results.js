@@ -82,7 +82,7 @@ function initializeResultGallery(page,dataset,prefix) {
       if(pageVisible && visibleRows.has(row) && !video.hidden) resultMediaCache.prioritize(video.dataset.src);
       if(shouldPlay && !video.hidden && video.getAttribute('src')) {
         if(!video.paused)return;
-        window.paperMedia.play(video);
+        window.paperMedia.play(video,()=>video.isConnected&&!document.hidden&&pageVisible&&visibleRows.has(row)&&playing&&!video.hidden);
       } else if(!video.paused)video.pause();
     });
   }
